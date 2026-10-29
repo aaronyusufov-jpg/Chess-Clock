@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Часы">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" sizes="180x180" href="icon.png?v=2">
+<link rel="icon" type="image/png" href="icon.png?v=2">
+<link rel="shortcut icon" href="icon.png?v=2">
+<link rel="manifest" href="manifest.webmanifest?v=2">
+<meta name="theme-color" content="#130f06">
+<style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}[hidden]:not([hidden=until-found i]){display:none!important}</style>
+</head><body>
+<title>Шахматные часы</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: two full-width player faces stacked; the top one is rotated 180° for the opponent across the board; a slim control bar sits between them. The running side takes the dark-square green with a faint checkerboard. */
+:root {
+  --bg: #dde3d9;
+  --panel: #f4f6f0;
+  --fg: #141a15;
+  --muted: #55625a;
+  --line: #bac5b6;
+  --active: #4a7a36;
+  --on-active: #ffffff;
+  --flag-bg: #b3261e;
+  --on-flag: #ffffff;
+  --scrim: rgba(20, 28, 22, .45);
+  --font-digits: 'Big Shoulders Display', 'Arial Narrow', Impact, sans-serif;
+  --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0f0c; --panel: #171d18; --fg: #edf1ea; --muted: #94a196; --line: #2b362d;
+    --active: #a3d68e; --on-active: #0e1a0b; --flag-bg: #e5534b; --on-flag: #1a0a09;
+    --scrim: rgba(0, 0, 0, .6); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0f0c; --panel: #171d18; --fg: #edf1ea; --muted: #94a196; --line: #2b362d;
+  --active: #a3d68e; --on-active: #0e1a0b; --flag-bg: #e5534b; --on-flag: #1a0a09;
+  --scrim: rgba(0, 0, 0, .6); color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); }
+button, input { font: inherit; color: inherit; }
+.app {
+  height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;
+  padding-block: 8px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.side {
+  flex: 1; min-height: 0; border: 0; border-radius: 16px; background-color: var(--panel); color: var(--fg);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; overflow: hidden;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  transition: background-color .12s;
+}
+.face { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; padding: 12px 16px; min-width: 0; box-sizing: border-box; }
+.side.top .face { transform: rotate(180deg); }
+.time {
+  font-family: var(--font-digits); font-weight: 900; font-size: min(31vw, 19vh); line-height: .92;
+  font-variant-numeric: tabular-nums; letter-spacing: .005em;
+}
+.time.long { font-size: min(23vw, 14vh); }
+.meta { font-size: 14px; font-weight: 500; color: var(--muted); min-height: 1.3em; }
+.side.active { background-color: var(--active); color: var(--on-active); }
+.side.active .meta { color: inherit; opacity: .85; }
+.side.low, .side.flagged { background-color: var(--flag-bg); color: var(--on-flag); }
+.side.low .meta, .side.flagged .meta { color: inherit; opacity: .9; }
+.paused .face { opacity: .6; }
+.idle .meta { animation: hint 1.8s ease-in-out infinite; }
+@keyframes hint { 50% { opacity: .45; } }
+.side:focus-visible, .btn:focus-visible, .chip:focus-visible, .field input:focus-visible, .apply:focus-visible, .switch input:focus-visible { outline: 3px solid var(--fg); outline-offset: -4px; }
+
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.grp { display: flex; gap: 8px; }
+.fmtbox { display: flex; flex-direction: column; align-items: center; line-height: 1; gap: 3px; }
+.fmt { font-family: var(--font-digits); font-weight: 800; font-size: 30px; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.cat { font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.btn {
+  width: 50px; height: 50px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+  display: grid; place-items: center; cursor: pointer; padding: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.btn:disabled { opacity: .4; cursor: default; }
+.btn.armed { background: var(--flag-bg); color: var(--on-flag); border-color: var(--flag-bg); }.btn svg { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.scrim { position: fixed; inset: 0; background: var(--scrim); display: grid; align-items: end; justify-items: center; z-index: 20; }
+.sheet {
+  width: 100%; max-width: 520px; box-sizing: border-box; background: var(--bg); border: 1px solid var(--line); border-bottom: 0;
+  border-radius: 18px 18px 0 0; display: flex; flex-direction: column; gap: 16px;
+  padding-top: 20px; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.sheet h2 { margin: 0; font-size: 18px; font-weight: 600; text-wrap: balance; }
+.presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.chip {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 58px; min-width: 0;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; padding: 6px;
+}
+.chip b { font-family: var(--font-digits); font-size: 24px; font-weight: 800; letter-spacing: .04em; line-height: 1; }
+.chip span { font-size: 12px; color: var(--muted); }
+.chip.on { background: var(--active); color: var(--on-active); border-color: var(--active); }
+.chip.on span { color: inherit; opacity: .85; }
+.custom { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 110px; font-size: 13px; color: var(--muted); }
+.field input { height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); padding: 0 12px; font-size: 18px; color: var(--fg); width: 100%; box-sizing: border-box; }
+.apply { height: 48px; padding: 0 20px; border-radius: 12px; border: 0; background: var(--active); color: var(--on-active); font-weight: 600; cursor: pointer; }
+.switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); font-size: 16px; cursor: pointer; }
+.switch small { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.switch input { width: 24px; height: 24px; accent-color: var(--active); flex: none; }
+.hap { position: fixed; left: -100px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
+.sheet { max-height: 92%; overflow-y: auto; }
+.pal { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.sw { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; font-size: 12px; min-width: 0; }
+.sw i { display: block; width: 100%; height: 26px; border-radius: 8px; border: 1px solid var(--line); box-sizing: border-box; }
+.sw.on { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+.sw:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+/* Поворот на 90°: интерфейс разворачивается целиком и раскладывается как в горизонтальных часах (игроки слева и справа, управление внизу). На вертикальном экране это две половины друг над другом, цифры в обеих повёрнуты на 90° в одну сторону. */
+.side { container-type: size; }
+@media (orientation: portrait) {
+  html.rot-cw .app, html.rot-ccw .app {
+    position: fixed; left: 50%; top: 50%; z-index: 1;
+    width: 100vh; height: 100vw; width: 100dvh; height: 100dvw;
+    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(0, 1fr) auto; gap: 8px;
+  }
+  html.rot-cw .app { transform: translate(-50%, -50%) rotate(90deg); padding: max(10px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-top, 0px)); }
+  html.rot-ccw .app { transform: translate(-50%, -50%) rotate(-90deg); padding: max(10px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)); }
+  html.rot-cw #s1 { grid-column: 1; grid-row: 1; }
+  html.rot-cw #s0 { grid-column: 2; grid-row: 1; }
+  html.rot-ccw #s1 { grid-column: 2; grid-row: 1; }
+  html.rot-ccw #s0 { grid-column: 1; grid-row: 1; }
+  html.rot-cw .bar, html.rot-ccw .bar { grid-column: 1 / -1; grid-row: 2; }
+  html.rot-cw .side.top .face, html.rot-ccw .side.top .face { transform: none; }
+  html.rot-cw .face, html.rot-ccw .face { gap: 4px; padding: 6px 16px; }
+  html.rot-cw .time, html.rot-ccw .time { font-size: min(calc((100cqw - 40px) / var(--em, 1.8)), 72cqh); }
+  html.rot-cw .scrim, html.rot-ccw .scrim { inset: auto; left: 50%; top: 50%; width: 100vh; height: 100vw; width: 100dvh; height: 100dvw; }
+  html.rot-cw .scrim { transform: translate(-50%, -50%) rotate(90deg); }
+  html.rot-ccw .scrim { transform: translate(-50%, -50%) rotate(-90deg); }
+}
+.lay { display: flex; flex-direction: column; gap: 8px; }
+.lbl { font-size: 13px; color: var(--muted); }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.seg button { min-height: 44px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; font-size: 16px; padding: 6px; }
+.seg button.on { background: var(--active); color: var(--on-active); border-color: var(--active); }
+.seg button:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+.hint { margin: 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
+@media (orientation: landscape) and (max-height: 600px) {
+  .face { gap: 4px; padding: 6px 16px; }
+  .time { font-size: min(26vw, 27vh); }
+  .time.long { font-size: min(20vw, 20vh); }
+}
+@media (prefers-reduced-motion: reduce) { .side { transition: none; } .idle .meta { animation: none; } }
+</style>
+
+<main class="app idle" id="app">
+  <button class="side top" id="s1" type="button" aria-label="Верхний игрок: нажмите после своего хода">
+    <div class="face">
+      <div class="time" id="t1">5:00</div>
+      <div class="meta" id="m1"></div>
+    </div>
+  </button>
+
+  <div class="bar">
+    <div class="grp">
+      <button class="btn" id="bSet" type="button" aria-label="Контроль времени">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+      </button>
+      <button class="btn" id="bSnd" type="button" aria-label="Звук" aria-pressed="true"></button>    </div>
+    <div class="fmtbox"><div class="fmt" id="fmt">5+0</div><div class="cat" id="cat">Блиц</div></div>
+    <div class="grp">
+      <button class="btn" id="bRst" type="button" aria-label="Сбросить часы">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg>
+      </button>
+      <button class="btn" id="bPause" type="button" aria-label="Пауза" disabled></button>
+    </div>
+  </div>
+
+  <button class="side" id="s0" type="button" aria-label="Нижний игрок: нажмите после своего хода">
+    <div class="face">
+      <div class="time" id="t0">5:00</div>
+      <div class="meta" id="m0"></div>
+    </div>
+  </button>
+</main>
+
+<label class="hap" id="hap" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label>
+
+<div class="scrim" id="scrim" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle">
+    <h2 id="shTitle">Контроль времени</h2>
+    <div class="presets" id="presets"></div>
+    <form class="custom" id="custom">
+      <label class="field" for="inMin">Минут на партию<input id="inMin" type="number" inputmode="numeric" min="1" max="180" step="1" value="5"></label>
+      <label class="field" for="inInc">Добавка за ход, сек<input id="inInc" type="number" inputmode="numeric" min="0" max="60" step="1" value="0"></label>
+      <button class="apply" type="submit">Применить</button>
+    </form>
+    <div class="pal" id="pal" role="group" aria-label="Цвета"></div>
+    <label class="switch" for="inVib"><span>Вибрация<small>Короткий отклик на каждый ход. На iPhone работает с iOS 18.</small></span><input id="inVib" type="checkbox" checked></label>
+    <div class="lay" role="group" aria-label="Поворот экрана">
+      <span class="lbl">Поворот экрана</span>
+      <div class="seg" id="segRot">
+        <button type="button" data-r="none">Нет</button>
+        <button type="button" data-r="cw" aria-label="Повернуть по часовой стрелке">↻ 90°</button>
+        <button type="button" data-r="ccw" aria-label="Повернуть против часовой стрелки">↺ 90°</button>
+      </div>
+      <p class="hint">Для телефона, который лежит горизонтально при заблокированном повороте экрана. Выберите сторону, с которой цифры стоят ровно. Игроки окажутся слева и справа, как в горизонтальных часах.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var PRESETS = [[1,0,'Пуля'],[3,0,'Блиц'],[3,2,'Блиц'],[5,0,'Блиц'],[10,0,'Рапид'],[10,5,'Рапид'],[15,10,'Рапид'],[30,0,'Классика'],[90,30,'Классика']];
+  var ICON = {
+    play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>',
+    on: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg>',
+    off: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>'
+  };
+
+  var cfg = { min: 5, inc: 0 };
+  try {
+    var saved = JSON.parse(localStorage.getItem('chessclock-cfg') || 'null');
+    if (saved && saved.min >= 1 && saved.inc >= 0) cfg = saved;
+  } catch (e) {}
+  var sound = true, vib = true;
+  try { sound = localStorage.getItem('chessclock-sound') !== '0'; } catch (e) {}
+  try { vib = localStorage.getItem('chessclock-vib') !== '0'; } catch (e) {}
+  var rot = 'none';
+  try { var rv = localStorage.getItem('chessclock-rot'); if (rv === 'cw' || rv === 'ccw') rot = rv; } catch (e) {}
+  function applyRot() {
+    var c = document.documentElement.classList;
+    c.toggle('rot-cw', rot === 'cw');
+    c.toggle('rot-ccw', rot === 'ccw');
+    var bs = document.querySelectorAll('#segRot button');
+    for (var i = 0; i < bs.length; i++) {
+      var on = bs[i].dataset.r === rot;
+      bs[i].classList.toggle('on', on);
+      bs[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    if (typeof els !== 'undefined' && els) fitAll();
+  }
+
+  // index 0 = белые (внизу), 1 = чёрные (вверху)
+  var t, moves, active, status, last, flagged, tickSec = -1, looping = false, armedTimer = null;
+  var els = [
+    { btn: $('s0'), time: $('t0'), meta: $('m0') },
+    { btn: $('s1'), time: $('t1'), meta: $('m1') }
+  ];
+
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function fmt(ms) {
+    ms = Math.max(0, ms);
+    if (ms < 20000) {
+      return '0:' + pad(Math.floor(ms / 1000)) + '.' + Math.floor((ms % 1000) / 100);
+    }
+    var sec = Math.ceil(ms / 1000);
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return h ? h + ':' + pad(m) + ':' + pad(s) : m + ':' + pad(s);
+  }
+  // Если цифры шире половины (другой шрифт, длинный формат), уменьшаем их ровно настолько, чтобы влезли.
+  function fit(e) {
+    var tm = e.time; tm.style.fontSize = '';
+    var avail = tm.parentNode.clientWidth - 32;
+    var w = Math.max(tm.scrollWidth, tm.offsetWidth);
+    if (avail > 0 && w > avail) tm.style.fontSize = (parseFloat(getComputedStyle(tm).fontSize) * avail / w * 0.97).toFixed(1) + 'px';
+  }
+  function fitAll() { for (var i = 0; i < els.length; i++) fit(els[i]); }
+  window.addEventListener('resize', fitAll);
+  try { if (document.fonts) { document.fonts.ready.then(fitAll); document.fonts.addEventListener('loadingdone', fitAll); } } catch (e) {}
+  function category() {
+    for (var i = 0; i < PRESETS.length; i++) if (PRESETS[i][0] === cfg.min && PRESETS[i][1] === cfg.inc) return PRESETS[i][2];
+    return 'Свой формат';
+  }
+
+  /* ---------- звук: синтезированный «деревянный» щелчок ---------- */
+  var ctx = null, noiseBuf = null;
+  function audio() {
+    try {
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+      if (!noiseBuf) {
+        var len = Math.floor(ctx.sampleRate * 0.05);
+        noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+        var d = noiseBuf.getChannelData(0);
+        for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+      }
+      return ctx;
+    } catch (e) { return null; }
+  }
+  function click(side) {
+    if (!sound) return;
+    var c = audio(); if (!c) return;
+    try {
+      var now = c.currentTime;
+      var src = c.createBufferSource(); src.buffer = noiseBuf;
+      var bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = side === 0 ? 1700 : 1350; bp.Q.value = 1.1;
+      var g1 = c.createGain(); g1.gain.setValueAtTime(0.9, now); g1.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+      src.connect(bp); bp.connect(g1); g1.connect(c.destination); src.start(now);
+      var o = c.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(side === 0 ? 210 : 170, now); o.frequency.exponentialRampToValueAtTime(70, now + 0.07);
+      var g2 = c.createGain(); g2.gain.setValueAtTime(0.5, now); g2.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+      o.connect(g2); g2.connect(c.destination); o.start(now); o.stop(now + 0.1);
+    } catch (e) {}
+  }
+  function tone(freq, dur, delay, vol) {
+    if (!sound) return;
+    var c = audio(); if (!c) return;
+    try {
+      var now = c.currentTime + (delay || 0);
+      var o = c.createOscillator(); o.type = 'triangle'; o.frequency.value = freq;
+      var g = c.createGain(); g.gain.setValueAtTime(vol || 0.1, now); g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + dur + 0.02);
+    } catch (e) {}
+  }
+  // Android: navigator.vibrate. iPhone (iOS 18+): отклик даёт переключатель <input switch>, если нажать его из жеста пользователя.
+  var canVibrate = typeof navigator.vibrate === 'function', needHap = false;
+  function pulse() { try { var l = $('hap'); if (l) l.click(); } catch (e) {} }
+  function buzz(p, inGesture) {
+    if (!vib) return;
+    try {
+      if (canVibrate) { navigator.vibrate(p); return; }
+      if (inGesture) needHap = true;
+      else if (Array.isArray(p)) { pulse(); setTimeout(pulse, 120); setTimeout(pulse, 240); }
+      else pulse();
+    } catch (e) {}
+  }
+  function flushHap() { if (needHap) { needHap = false; pulse(); } }
+
+  var wl = null;
+  function wake() {
+    try {
+      if ('wakeLock' in navigator && !wl) {
+        navigator.wakeLock.request('screen').then(function (l) {
+          wl = l; l.addEventListener('release', function () { wl = null; });
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
+  function unwake() { try { if (wl) { wl.release(); wl = null; } } catch (e) {} }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && status === 'running') wake();
+  });
+
+  function render() {
+    for (var i = 0; i < 2; i++) {
+      var e = els[i];
+      var txt = fmt(t[i]);
+      if (e.time.textContent !== txt) {
+        e.time.textContent = txt; e.time.classList.toggle('long', txt.length > 5);
+        var dg = txt.replace(/[^0-9]/g, '').length;
+        e.time.style.setProperty('--em', (dg * 0.5 + (txt.length - dg) * 0.26).toFixed(2));
+        fit(e);
+      }
+      var isActive = (status === 'running' || status === 'paused') && active === i;
+      var low = status === 'running' && active === i && t[i] < 20000;
+      e.btn.classList.toggle('active', isActive);
+      e.btn.classList.toggle('low', low);
+      e.btn.classList.toggle('flagged', flagged === i);
+      var meta;
+      if (flagged === i) meta = 'Время вышло';
+      else if (status === 'idle') meta = 'Нажмите, чтобы начать';
+      else if (status === 'paused') meta = 'Пауза';
+      else meta = 'Ходов: ' + moves[i];
+      if (e.meta.textContent !== meta) e.meta.textContent = meta;
+    }
+    var app = $('app');
+    app.classList.toggle('paused', status === 'paused');
+    app.classList.toggle('idle', status === 'idle');
+    var pb = $('bPause');
+    pb.disabled = status === 'idle' || status === 'over';
+    var pauseIcon = status === 'paused' ? ICON.play : ICON.pause;
+    if (pb.dataset.icon !== pauseIcon) { pb.innerHTML = pauseIcon; pb.dataset.icon = pauseIcon; }
+    pb.setAttribute('aria-label', status === 'paused' ? 'Продолжить' : 'Пауза');
+    $('fmt').textContent = cfg.min + '+' + cfg.inc;
+    $('cat').textContent = category();
+  }
+
+  function loop() {
+    if (looping) return;
+    looping = true;
+    (function frame() {
+      if (status !== 'running') { looping = false; return; }
+      var now = performance.now();
+      t[active] -= now - last;
+      last = now;
+      if (t[active] <= 0) { flag(active); looping = false; return; }
+      if (t[active] < 10000) {
+        var s = Math.ceil(t[active] / 1000);
+        if (s !== tickSec) { tickSec = s; tone(1500, 0.04, 0, 0.07); buzz(12); }
+      }
+      render();
+      requestAnimationFrame(frame);
+    })();
+  }
+
+  function flag(i) {
+    t[i] = 0; flagged = i; status = 'over'; tickSec = -1;
+    tone(330, 0.25, 0, 0.12); tone(220, 0.5, 0.2, 0.12); buzz([250, 90, 250]); unwake(); render();
+  }
+
+  function newGame() {
+    t = [cfg.min * 60000, cfg.min * 60000];
+    moves = [0, 0]; active = -1; status = 'idle'; flagged = -1; last = 0; tickSec = -1;
+    unwake(); render();
+  }
+
+  function tap(i) {
+    if (status === 'over' || status === 'paused') return;
+    var now = performance.now();
+    if (status === 'idle') {
+      status = 'running'; active = 1 - i; last = now; tickSec = -1;
+      click(i); buzz(30, true); wake(); render(); loop();
+      return;
+    }
+    if (i !== active) return;
+    t[i] -= now - last;
+    if (t[i] <= 0) { flag(i); return; }
+    last = now;
+    t[i] += cfg.inc * 1000;
+    moves[i]++;
+    active = 1 - i; tickSec = -1;
+    click(i); buzz(30, true); render();
+  }
+
+  function togglePause() {
+    if (status === 'running') {
+      var now = performance.now();
+      t[active] -= now - last;
+      if (t[active] <= 0) { flag(active); return; }
+      status = 'paused'; unwake(); render();
+    } else if (status === 'paused') {
+      status = 'running'; last = performance.now(); wake(); render(); loop();
+    }
+  }
+
+  els.forEach(function (e, i) {
+    e.btn.addEventListener('pointerdown', function (ev) {
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      tap(i);
+    });
+    e.btn.addEventListener('click', function (ev) { if (ev.detail === 0) tap(i); flushHap(); });
+  });
+  $('bPause').addEventListener('click', togglePause);
+
+  var rst = $('bRst');
+  function disarm() { rst.classList.remove('armed'); rst.setAttribute('aria-label', 'Сбросить часы'); clearTimeout(armedTimer); armedTimer = null; }
+  rst.addEventListener('click', function () {
+    var inGame = status === 'running' || status === 'paused';
+    if (inGame && !rst.classList.contains('armed')) {
+      rst.classList.add('armed');
+      rst.setAttribute('aria-label', 'Нажмите ещё раз, чтобы сбросить');
+      armedTimer = setTimeout(disarm, 2500);
+      return;
+    }
+    disarm(); newGame();
+  });
+
+  function setSound() {
+    $('bSnd').innerHTML = sound ? ICON.on : ICON.off;
+    $('bSnd').setAttribute('aria-pressed', sound ? 'true' : 'false');
+    $('bSnd').setAttribute('aria-label', sound ? 'Звук включён' : 'Звук выключен');
+  }
+  $('bSnd').addEventListener('click', function () {
+    sound = !sound;
+    try { localStorage.setItem('chessclock-sound', sound ? '1' : '0'); } catch (e) {}
+    setSound(); click(0);
+  });
+
+  var scrim = $('scrim');
+  function buildPresets() {
+    $('presets').innerHTML = PRESETS.map(function (p) {
+      var on = p[0] === cfg.min && p[1] === cfg.inc;
+      return '<button type="button" class="chip' + (on ? ' on' : '') + '" data-m="' + p[0] + '" data-i="' + p[1] + '"><b>' + p[0] + '+' + p[1] + '</b><span>' + p[2] + '</span></button>';
+    }).join('');
+    $('inMin').value = cfg.min; $('inInc').value = cfg.inc; $('inVib').checked = vib;    buildPal();
+  }
+  function openSheet() {
+    if (status === 'running') togglePause();
+    buildPresets(); scrim.hidden = false;
+    var on = scrim.querySelector('.chip.on') || scrim.querySelector('.chip');
+    if (on) on.focus();
+  }
+  function closeSheet() { scrim.hidden = true; $('bSet').focus(); }
+  function applyCfg(m, inc) {
+    m = Math.min(180, Math.max(1, Math.round(m) || 1));
+    inc = Math.min(60, Math.max(0, Math.round(inc) || 0));
+    cfg = { min: m, inc: inc };
+    try { localStorage.setItem('chessclock-cfg', JSON.stringify(cfg)); } catch (e) {}
+    disarm(); newGame(); closeSheet();
+  }
+  $('bSet').addEventListener('click', openSheet);
+  $('presets').addEventListener('click', function (ev) {
+    var c = ev.target.closest('.chip');
+    if (c) applyCfg(+c.dataset.m, +c.dataset.i);
+  });
+  $('custom').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    applyCfg(parseFloat($('inMin').value), parseFloat($('inInc').value));
+  });
+  $('inVib').addEventListener('change', function () {
+    vib = $('inVib').checked;
+    try { localStorage.setItem('chessclock-vib', vib ? '1' : '0'); } catch (e) {}
+    buzz(40, true); flushHap();
+  });
+  $('segRot').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button');
+    if (!b) return;
+    rot = b.dataset.r;
+    try { localStorage.setItem('chessclock-rot', rot); } catch (e) {}
+    applyRot();
+  });
+  scrim.addEventListener('pointerdown', function (ev) { if (ev.target === scrim) closeSheet(); });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !scrim.hidden) closeSheet(); });
+
+  /* ---------- цветовые схемы ---------- */
+  var FLAG = { '--flag-bg': '#c53030', '--on-flag': '#ffffff' };
+  var PALS = [
+    { id: 'auto', name: 'Авто' },
+    { id: 'graphite', name: 'Графит', v: { '--bg': '#161615', '--panel': '#262523', '--fg': '#f2f1ee', '--muted': '#a09f9a', '--line': '#3a3936', '--active': '#f2f1ee', '--on-active': '#161615' } },
+    { id: 'blue', name: 'Синий', v: { '--bg': '#0e1522', '--panel': '#182236', '--fg': '#e8eef9', '--muted': '#8c9db8', '--line': '#2a3a55', '--active': '#5b9bff', '--on-active': '#06142b' } },
+    { id: 'wood', name: 'Дерево', v: { '--bg': '#241a13', '--panel': '#37291e', '--fg': '#f6ead6', '--muted': '#bba68a', '--line': '#4f3b2b', '--active': '#f0d9b5', '--on-active': '#241a13' } },
+    { id: 'light', name: 'Светлый', light: true, v: { '--bg': '#e9e9e6', '--panel': '#fafaf8', '--fg': '#1a1a18', '--muted': '#62625d', '--line': '#cfcfc9', '--active': '#1a1a18', '--on-active': '#fafaf8' } },
+    { id: 'classic', name: 'Классика', v: { '--bg': '#262421', '--panel': '#302e2b', '--fg': '#f0efec', '--muted': '#a1a09b', '--line': '#45423e', '--active': '#81b64c', '--on-active': '#14210a' } },
+    { id: 'violet', name: 'Фиолет', v: { '--bg': '#15111f', '--panel': '#211b31', '--fg': '#ece8f8', '--muted': '#a69cc4', '--line': '#382f52', '--active': '#b59cff', '--on-active': '#1b1038' } },
+    { id: 'teal', name: 'Бирюза', v: { '--bg': '#0c1718', '--panel': '#142526', '--fg': '#e4f3f2', '--muted': '#8fb0ae', '--line': '#223f41', '--active': '#4fd1c5', '--on-active': '#05201d' } },
+    { id: 'amber', name: 'Янтарь', v: { '--bg': '#1a1408', '--panel': '#2a210f', '--fg': '#f9efd5', '--muted': '#c2ad7c', '--line': '#483a1a', '--active': '#f5b82e', '--on-active': '#2a1c00' } },
+    { id: 'rose', name: 'Розовый', v: { '--bg': '#1f1117', '--panel': '#311b25', '--fg': '#fbe9f0', '--muted': '#cca0b2', '--line': '#51283a', '--active': '#ff7fa8', '--on-active': '#33071a' } },
+    { id: 'mint', name: 'Мята', light: true, v: { '--bg': '#e2efe7', '--panel': '#f5fbf7', '--fg': '#10231a', '--muted': '#50685a', '--line': '#bcd3c4', '--active': '#1f7a52', '--on-active': '#ffffff' } },
+    { id: 'sand', name: 'Песок', light: true, v: { '--bg': '#efe6d4', '--panel': '#fbf6ea', '--fg': '#2a2012', '--muted': '#6f6045', '--line': '#d8cbb0', '--active': '#8a5a1f', '--on-active': '#ffffff' } }
+  ];
+  var KEYS = ['--bg', '--panel', '--fg', '--muted', '--line', '--active', '--on-active', '--flag-bg', '--on-flag'];
+  var pal = 'auto';
+  try { pal = localStorage.getItem('chessclock-pal') || 'auto'; } catch (e) {}
+  function applyPal(id) {
+    var root = document.documentElement, p = null;
+    for (var i = 0; i < PALS.length; i++) if (PALS[i].id === id) p = PALS[i];
+    if (!p) { p = PALS[0]; id = 'auto'; }
+    KEYS.forEach(function (k) { root.style.removeProperty(k); });
+    root.style.removeProperty('color-scheme');
+    if (p.v) {
+      Object.keys(p.v).forEach(function (k) { root.style.setProperty(k, p.v[k]); });
+      Object.keys(FLAG).forEach(function (k) { root.style.setProperty(k, FLAG[k]); });
+      root.style.setProperty('color-scheme', p.light ? 'light' : 'dark');
+    }
+    pal = id;
+  }
+  function buildPal() {
+    $('pal').innerHTML = PALS.map(function (p) {
+      var bg = p.v ? 'linear-gradient(135deg, ' + p.v['--panel'] + ' 50%, ' + p.v['--active'] + ' 50%)' : 'linear-gradient(135deg, var(--panel) 50%, var(--active) 50%)';
+      return '<button type="button" class="sw' + (p.id === pal ? ' on' : '') + '" data-p="' + p.id + '" aria-pressed="' + (p.id === pal) + '"><i style="background:' + bg + '"></i>' + p.name + '</button>';
+    }).join('');
+  }
+  $('pal').addEventListener('click', function (ev) {
+    var b = ev.target.closest('.sw');
+    if (!b) return;
+    applyPal(b.dataset.p);
+    try { localStorage.setItem('chessclock-pal', pal); } catch (e) {}
+    buildPal();
+  });
+
+  applyPal(pal);
+  applyRot();
+  setSound();
+  newGame();
+})();
+</script>
+</body></html>
